@@ -3,6 +3,8 @@ from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import random
+from sqlalchemy.orm.exc import NoResultFound
+
 
 from models import setup_db, Question, Category
 
@@ -25,7 +27,7 @@ def create_app(test_config=None):
 	'''
 	@TODO: Set up CORS. Allow '*' for origins. Delete the sample route after completing the TODOs
 	'''
-	cors = CORS(app, resources={r"/api/*":{"origins": "*"}})
+	#cors = CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 	'''
 	@TODO: Use the after_request decorator to set Access-Control-Allow
@@ -34,6 +36,7 @@ def create_app(test_config=None):
 	def after_request(response):
 		response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, true')
 		response.headers.add('Access-Control-Allow-Methods', 'GET, PATCH, POST, DELETE, OPTIONS')
+		response.headers.add('Access-Control-Allow-Origins', '*')
 		return response
 
 	'''
@@ -43,12 +46,19 @@ def create_app(test_config=None):
 	'''
 	@app.route('/categories')
 	def get_categories():
-		categories = list(map(Category.format, Category.query.all()))
-		result = {
-			"success": True,
-			"categories": categories
-		}
-		return jsonify(result)
+		try:
+			categories = Category.query.all()
+			# Format categories to match front-end
+			categories_dict = {}
+			for category in categories:
+				categories_dict[category.id] = category.type
+				# return successful response
+			return jsonify({
+				'success': True,
+				'categories': categories_dict
+			}), 200
+		except Exception:
+			abort(404)
 
 
 	'''
@@ -65,6 +75,7 @@ def create_app(test_config=None):
 	'''
 	@app.route('/questions')
 	def get_questions():
+
 		selection = Question.query.order_by(Question.id).all()
 		categories = list(map(Category.format,Category.query.all()))
 		current_questions = pagination_questions(request, selection)
@@ -72,13 +83,17 @@ def create_app(test_config=None):
 		if len(current_questions) == 0:
 			abort(404)
 
+			categories_dict = {}
+			for category in categories:
+				categories_dict[category.id] = category.type
+
 		return jsonify({
 			'success': True,
 			'categories': categories,
 			'questions': current_questions,
 			'total_questions': len(Question.query.all()),
 			'current_category': None,
-			})
+			}),200
 
 	'''
 	@TODO: 
@@ -90,24 +105,21 @@ def create_app(test_config=None):
 	@app.route('/questions/<int:question_id>', methods=['DELETE'])
 	def delete_question(question_id):
 		try:
-			question = Question.query.filter(Question.id == question_id).one_or_none()
+			question = Question.query.filter(Question.id == question_id).one()
 
-			if question is None:
-				abort(404)
-
-				question.delete()
-				selection = Question.query.order_b(Question.id).all()
-				current_questions = pagination_questions(request, selection)
-
-				return jsonify({
-					'success': True,
-					'questions': current_questions,
-					'total_questions': len(Question.query.all()),
-					'deleted': question_id
-					})
-
+			question.delete()
+			selection = Question.query.order_by(Question.id).all()
+			current_questions = pagination_questions(request, selection)
+			return jsonify({
+				'success': True,
+				'deleted': question_id,
+				'questions': current_questions,
+				'total_questions': len(Question.query.all())
+			}),200
+		except NoResultFound:
+			abort(404)
 		except:
-			abort(442)
+			abort(422)
 
 	'''
 	@TODO: 
@@ -119,7 +131,7 @@ def create_app(test_config=None):
 	the form will clear and the question will appear at the end of the last page
 	of the questions list in the "List" tab.  
 	'''
-	@app.route('/questions', methods=["POST"])
+	@app.route('/questions', methods=['POST'])
 	def add_question():
 		body = request.get_json()
 
@@ -129,20 +141,26 @@ def create_app(test_config=None):
 		new_difficulty = body.get('difficulty', None)
 
 		try:
-			question = Question(question=new_question, answer=new_answer, category=new_category, difficulty=new_difficulty)
+			question = Question(
+				question=new_question,
+				answer=new_answer,
+				difficulty=new_difficulty,
+				category=new_category)
+			
 			question.insert()
-
+			
 			selection = Question.query.order_by(Question.id).all()
 			current_questions = pagination_questions(request, selection)
 
 			return jsonify({
 				'success': True,
+				'created':question.id,
 				'question':current_questions,
-				'total_questions': len(Question.query.all()),
-				'created':question.id
-				})
-		except:
-			abort(442)
+				'total_questions': len(Question.query.all())
+			})
+		except Exception as error: 
+			#print("\nerror => {}\n".format(error)) 
+			abort(422)
 	'''
 	@TODO: 
 	Create a POST endpoint to get questions based on a search term. 
@@ -183,7 +201,7 @@ def create_app(test_config=None):
 	categories in the left column will cause only questions of that 
 	category to be shown. 
 	'''
-	@app.route('/categories/<int:category_id>/questions')
+	@app.route('/categories/<int:category_id>/questions',methods=['GET'])
 	def question_by_category(category_id):
 		category_data = Category.query.get(category_id)
 		page = 1
@@ -256,7 +274,7 @@ def create_app(test_config=None):
 			"message": "unprocessable"
 			}), 422
 
-	@app.errorhandler(422)
+	@app.errorhandler(404)
 	def not_found(error):
 		return jsonify({
 			"success": False,
