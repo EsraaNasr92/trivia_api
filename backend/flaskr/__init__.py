@@ -204,6 +204,7 @@ def create_app(test_config=None):
 		try:
 			questions = Question.query.order_by(Question.id).filter_by(category=category_id)
 			current_category = [question.category for question in questions]
+
 			return jsonify({
 				"questions": [question.format() for question in questions.all()],
 				"total_questions": len(questions.all()),
@@ -211,6 +212,8 @@ def create_app(test_config=None):
 			})
 		except:
 			abort(404)
+
+		
 
 	'''
 	@TODO: 
